@@ -9,6 +9,8 @@ from aiohttp_session import get_session
 
 from auth.kancolle import KancolleAuth, OOIAuthException
 
+from base import config
+
 
 class FrontEndHandler:
     """OOI3前端请求处理类。"""
@@ -51,39 +53,49 @@ class FrontEndHandler:
         login_id = post.get('login_id', None)
         password = post.get('password', None)
         mode = int(post.get('mode', 1))
-
         session['mode'] = mode
 
-        if login_id and password:
-            kancolle = KancolleAuth(login_id, password)
-            if mode in (1, 2, 3):
-                try:
-                    yield from kancolle.get_flash()
-                    session['api_token'] = kancolle.api_token
-                    session['api_starttime'] = kancolle.api_starttime
-                    session['world_ip'] = kancolle.world_ip
-                    if mode == 2:
-                        return aiohttp.web.HTTPFound('/kcv')
-                    elif mode == 3:
-                        return aiohttp.web.HTTPFound('/poi')
-                    else:
-                        return aiohttp.web.HTTPFound('/kancolle')
+        f = open(config.white_list, encoding='utf-8')  
+        WhiteList = f.readlines()
+        isre = False
+        for item in WhiteList:
+            if login_id.strip().upper() == item.upper().strip():
+                isre = True
+                break
+        if isre:
+            if login_id and password:
+                kancolle = KancolleAuth(login_id, password)
+                if mode in (1, 2, 3):
+                    try:
+                        yield from kancolle.get_flash()
+                        session['api_token'] = kancolle.api_token
+                        session['api_starttime'] = kancolle.api_starttime
+                        session['world_ip'] = kancolle.world_ip
+                        if mode == 2:
+                            return aiohttp.web.HTTPFound('/kcv')
+                        elif mode == 3:
+                            return aiohttp.web.HTTPFound('/poi')
+                        else:
+                            return aiohttp.web.HTTPFound('/kancolle')
 
-                except OOIAuthException as e:
-                    context = {'errmsg': e.message, 'mode': mode}
-                    return aiohttp_jinja2.render_template('form.html', request, context)
-            elif mode == 4:
-                try:
-                    osapi_url = yield from kancolle.get_osapi()
-                    session['osapi_url'] = osapi_url
-                    return aiohttp.web.HTTPFound('/connector')
-                except OOIAuthException as e:
-                    context = {'errmsg': e.message, 'mode': mode}
-                    return aiohttp_jinja2.render_template('form.html', request, context)
+                    except OOIAuthException as e:
+                        context = {'errmsg': e.message, 'mode': mode}
+                        return aiohttp_jinja2.render_template('form.html', request, context)
+                elif mode == 4:
+                    try:
+                        osapi_url = yield from kancolle.get_osapi()
+                        session['osapi_url'] = osapi_url
+                        return aiohttp.web.HTTPFound('/connector')
+                    except OOIAuthException as e:
+                        context = {'errmsg': e.message, 'mode': mode}
+                        return aiohttp_jinja2.render_template('form.html', request, context)
+                else:
+                    raise aiohttp.web.HTTPBadRequest()
             else:
-                raise aiohttp.web.HTTPBadRequest()
+                context = {'errmsg': '请输入完整的登录ID和密码', 'mode': mode}
+                return aiohttp_jinja2.render_template('form.html', request, context)
         else:
-            context = {'errmsg': '请输入完整的登录ID和密码', 'mode': mode}
+            context = {'errmsg': 'ID不在白名单', 'mode': mode}
             return aiohttp_jinja2.render_template('form.html', request, context)
 
     @asyncio.coroutine
